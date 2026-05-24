@@ -530,7 +530,7 @@ html,body{
 
   <button class="btn-green" onclick="startMatch()">Start Match 🏏</button>
 
- <!--- <div class="card" style="gap:8px;">
+  <!-- <div class="card" style="gap:8px;">
     <div class="card-title">Local Testing Tips</div>
     <p style="font-size:12px;color:var(--text2);line-height:1.6;">
       <b>Live sync across devices</b> requires HTTPS (GitHub Pages) or a local server.<br><br>
@@ -797,10 +797,14 @@ function toast(msg, type='', duration=3000){
 }
 
 // ── SELECT CUSTOM OVERS ──
-$('ov-select').addEventListener('change', function(){
-  $('custom-overs-wrap').style.display = this.value==='custom' ? 'flex' : 'none';
+// Guard: these run at parse time; null-check prevents crash that would stop all functions registering
+const _ovSel = $('ov-select');
+if(_ovSel) _ovSel.addEventListener('change', function(){
+  const wrap = $('custom-overs-wrap');
+  if(wrap) wrap.style.display = this.value==='custom' ? 'flex' : 'none';
 });
-$('auth-pw').addEventListener('keydown', e => { if(e.key==='Enter') checkAuth(); });
+const _authPw = $('auth-pw');
+if(_authPw) _authPw.addEventListener('keydown', e => { if(e.key==='Enter') checkAuth(); });
 
 // ── START MATCH ──
 function startMatch(){
@@ -847,16 +851,6 @@ function addBall(runs){
   if(S.matchOver || S.inningsDone) return;
   if(processingBall) return;
   processingBall = true;
-  saveHistory();
-  bat().runs  += runs;
-  bat().balls++;
-  S.currentOverBalls.push(String(runs));
-  if(runs===4) toast('FOUR! 🏏💚', 'success', 1500);
-  if(runs===6) toast('SIX! 🚀💥', 'success', 1800);
-  checkOverComplete();
-  checkMatchEnd();
-  pushState();
-}
   saveHistory();
   bat().runs  += runs;
   bat().balls++;
@@ -1171,12 +1165,14 @@ function listenFirebase(matchId){
 if(isFirebaseReady){
   db.ref('.info/connected').on('value', snap => {
     const ok = snap.val();
-    $('sync-dot').className = 'sync-dot ' + (ok?'ok':'err');
-    $('sync-lbl').textContent= ok ? 'Live • Synced' : 'Reconnecting…';
+    const dot = $('sync-dot'), lbl = $('sync-lbl');
+    if(dot) dot.className = 'sync-dot ' + (ok?'ok':'err');
+    if(lbl) lbl.textContent = ok ? 'Live • Synced' : 'Reconnecting…';
   });
 } else {
-  $('sync-dot').className = 'sync-dot err';
-  $('sync-lbl').textContent= isFirebaseReady ? 'Connecting…' : 'Offline — add Firebase config to enable live sync';
+  const dot = $('sync-dot'), lbl = $('sync-lbl');
+  if(dot) dot.className = 'sync-dot err';
+  if(lbl) lbl.textContent = 'Offline — add Firebase config to enable live sync';
 }
 
 // ── TAB SWITCHING ──
@@ -1292,6 +1288,25 @@ function getShareURL(){
     prompt('Share this URL with viewers:', url);
   }
 }
+
+// ── EXPOSE ALL ONCLICK HANDLERS TO GLOBAL SCOPE ──
+// Prevents "X is not defined" errors when script runs in strict/module-like contexts
+window.toggleTheme        = toggleTheme;
+window.startMatch         = startMatch;
+window.addBall            = addBall;
+window.addExtra           = addExtra;
+window.addWicket          = addWicket;
+window.undoLast           = undoLast;
+window.manualSwitchInnings= manualSwitchInnings;
+window.confirmSwitchInnings=confirmSwitchInnings;
+window.endMatch           = endMatch;
+window.resetMatch         = resetMatch;
+window.getShareURL        = getShareURL;
+window.claimScorer        = claimScorer;
+window.showAuthOverlay    = showAuthOverlay;
+window.closeAuth          = closeAuth;
+window.checkAuth          = checkAuth;
+window.switchTab          = switchTab;
 </script>
 </body>
 </html>
