@@ -648,8 +648,11 @@ html,body{
       <button class="btn-action blue" onclick="manualSwitchInnings()">⇄ Switch Innings</button>
     </div>
     <div class="action-grid">
-      <button class="btn-action red" onclick="resetMatch()">Reset Match</button>
+      <button class="btn-action" onclick="getShareURL()">📋 Share URL</button>
       <button class="btn-action" onclick="endMatch()">End Match 🏆</button>
+    </div>
+    <div class="action-grid">
+      <button class="btn-action red" onclick="resetMatch()">Reset Match</button>
     </div>
   </div>
 
@@ -706,16 +709,14 @@ html,body{
 //  FIREBASE CONFIG — PASTE YOUR VALUES HERE
 //  (Firebase Console → Project Settings → Your apps → </> Web)
 // ════════════════════════════════════════════════════
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyBO2nSzUMxCLHeISwhd-rKm6D7PPQmEqO8",
-  authDomain: "cricscorebyhg.firebaseapp.com",
-  databaseURL: "https://cricscorebyhg-default-rtdb.firebaseio.com",
-  projectId: "cricscorebyhg",
-  storageBucket: "cricscorebyhg.firebasestorage.app",
-  messagingSenderId: "794602401477",
-  appId: "1:794602401477:web:81d84aa51e16c394078aac",
-  measurementId: "G-YJ97PN7NY3"
+  apiKey:            "REPLACE_WITH_YOUR_apiKey",
+  authDomain:        "REPLACE_WITH_YOUR_authDomain",
+  databaseURL:       "REPLACE_WITH_YOUR_databaseURL",
+  projectId:         "REPLACE_WITH_YOUR_projectId",
+  storageBucket:     "REPLACE_WITH_YOUR_storageBucket",
+  messagingSenderId: "REPLACE_WITH_YOUR_messagingSenderId",
+  appId:             "REPLACE_WITH_YOUR_appId"
 };
 // ════════════════════════════════════════════════════
 
@@ -812,6 +813,10 @@ function startMatch(){
   isScorer = true;
   activeTab = 'scorer';
   updateTabUI();
+  // Update browser URL for sharing
+  const shareUrl = location.origin + location.pathname + '?match=' + S.matchId;
+  history.replaceState({}, '', shareUrl);
+
   pushState();
   toast('Match started! Good luck 🏏', 'success');
 }
@@ -954,6 +959,9 @@ function resetMatch(){
   $('setup-screen').classList.remove('hidden');
   $('bot-nav').classList.add('hidden');
   $('live-pill').classList.add('hidden');
+
+  // Remove match param from URL
+  history.replaceState({}, '', location.pathname);
 }
 
 // ── RENDER ──
@@ -1146,22 +1154,47 @@ function checkAuth(){
 
 // ── URL VIEWER JOIN ──
 window.addEventListener('load', ()=>{
-  const mid = new URLSearchParams(location.search).get('match');
+  const params = new URLSearchParams(location.search);
+  const mid = params.get('match');
+
+  // Viewer mode
   if(mid && isFirebaseReady){
     S.matchId = mid;
+
     $('setup-screen').classList.add('hidden');
     $('scoreboard').classList.remove('hidden');
     $('bot-nav').classList.remove('hidden');
     $('live-pill').classList.remove('hidden');
+
+    isScorer = false;
+    activeTab = 'score';
+    updateTabUI();
+
     listenFirebase(mid);
+
+    toast('Connected to live match 📡', 'success', 2500);
   }
 });
 
 // Share match URL helper (adds ?match=ID)
 function getShareURL(){
-  const url = location.href.split('?')[0] + '?match=' + S.matchId;
-  if(navigator.clipboard){ navigator.clipboard.writeText(url).then(()=>toast('Share link copied! 📋','success')); }
-  else { prompt('Share this URL with viewers:', url); }
+  if(!S.matchId){
+    toast('Start a match first');
+    return;
+  }
+
+  const url = location.origin + location.pathname + '?match=' + S.matchId;
+
+  // Ensure browser URL is updated too
+  history.replaceState({}, '', url);
+
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(url)
+      .then(()=>toast('Share link copied! 📋','success'))
+      .catch(()=>prompt('Copy this URL:', url));
+  } else {
+    prompt('Share this URL with viewers:', url);
+  }
 }
 </script>
 </body>
