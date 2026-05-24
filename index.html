@@ -1081,7 +1081,12 @@ function renderState(){
   }
 
   // Scorer access card for viewers
-  if(s.started && !isScorer && !s.matchOver){
+  // Show immediately after match starts, even before first score
+  if(
+    (s.started || S.matchId) &&
+    !isScorer &&
+    !s.matchOver
+  ){
     $('scorer-access-card').classList.remove('hidden');
   } else {
     $('scorer-access-card').classList.add('hidden');
