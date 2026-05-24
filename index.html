@@ -709,16 +709,14 @@ html,body{
 //  FIREBASE CONFIG — PASTE YOUR VALUES HERE
 //  (Firebase Console → Project Settings → Your apps → </> Web)
 // ════════════════════════════════════════════════════
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyBO2nSzUMxCLHeISwhd-rKm6D7PPQmEqO8",
-  authDomain: "cricscorebyhg.firebaseapp.com",
-  databaseURL: "https://cricscorebyhg-default-rtdb.firebaseio.com",
-  projectId: "cricscorebyhg",
-  storageBucket: "cricscorebyhg.firebasestorage.app",
-  messagingSenderId: "794602401477",
-  appId: "1:794602401477:web:81d84aa51e16c394078aac",
-  measurementId: "G-YJ97PN7NY3"
+  apiKey:            "REPLACE_WITH_YOUR_apiKey",
+  authDomain:        "REPLACE_WITH_YOUR_authDomain",
+  databaseURL:       "REPLACE_WITH_YOUR_databaseURL",
+  projectId:         "REPLACE_WITH_YOUR_projectId",
+  storageBucket:     "REPLACE_WITH_YOUR_storageBucket",
+  messagingSenderId: "REPLACE_WITH_YOUR_messagingSenderId",
+  appId:             "REPLACE_WITH_YOUR_appId"
 };
 // ════════════════════════════════════════════════════
 
@@ -919,10 +917,19 @@ function resolveResult(){
 
 // ── INNINGS SWITCH ──
 function confirmSwitchInnings(){
+  // Only scorer can switch innings
+  if(!isScorer){
+    toast('Only scorer can switch innings');
+    showAuthOverlay();
+    return;
+  }
+
   S.inningsDone = false;
   S.innings = 2;
   S.currentOverBalls = [];
+
   toast(`${bat().name} need ${S.target} to win! 🎯`, 'info', 3000);
+
   pushState();
 }
 
@@ -961,6 +968,9 @@ function resetMatch(){
   $('setup-screen').classList.remove('hidden');
   $('bot-nav').classList.add('hidden');
   $('live-pill').classList.add('hidden');
+
+  // Remove saved scorer session
+  localStorage.removeItem('cricscore_scorer_' + S.matchId);
 
   // Remove match param from URL
   history.replaceState({}, '', location.pathname);
@@ -1074,6 +1084,11 @@ function renderState(){
   } else {
     $('scorer-access-card').classList.add('hidden');
   }
+
+  // Keep scorer panel synced across all devices
+  if(isScorer && activeTab === 'scorer' && !s.matchOver && !s.inningsDone){
+    $('scorer-panel').classList.remove('hidden');
+  }
 }
 
 // ── FIREBASE ──
@@ -1142,11 +1157,22 @@ function showAuthOverlay(){ $('auth-overlay').classList.remove('hidden'); $('aut
 function closeAuth()       { $('auth-overlay').classList.add('hidden'); switchTab('score'); }
 function checkAuth(){
   if($('auth-pw').value === S.scorerPass){
-    isScorer=true;
+
+    isScorer = true;
+
+    // Save scorer session locally
+    localStorage.setItem('cricscore_scorer_' + S.matchId, 'true');
+
     $('auth-overlay').classList.add('hidden');
-    activeTab='scorer';
+
+    activeTab = 'scorer';
+
     updateTabUI();
+
+    renderState();
+
     toast('Scorer access granted ✅','success');
+
   } else {
     $('auth-err').style.display='block';
     $('auth-pw').value='';
@@ -1168,9 +1194,14 @@ window.addEventListener('load', ()=>{
     $('bot-nav').classList.remove('hidden');
     $('live-pill').classList.remove('hidden');
 
-    isScorer = false;
-    activeTab = 'score';
+    // Restore scorer session if previously unlocked on this device
+    isScorer = localStorage.getItem('cricscore_scorer_' + mid) === 'true';
+
+    activeTab = isScorer ? 'scorer' : 'score';
+
     updateTabUI();
+
+    renderState();
 
     listenFirebase(mid);
 
