@@ -530,7 +530,7 @@ html,body{
 
   <button class="btn-green" onclick="startMatch()">Start Match 🏏</button>
 
-  <!-- <div class="card" style="gap:8px;">
+ <!--- <div class="card" style="gap:8px;">
     <div class="card-title">Local Testing Tips</div>
     <p style="font-size:12px;color:var(--text2);line-height:1.6;">
       <b>Live sync across devices</b> requires HTTPS (GitHub Pages) or a local server.<br><br>
@@ -845,13 +845,18 @@ function saveHistory(){
 
 function addBall(runs){
   if(S.matchOver || S.inningsDone) return;
-  if(processingBall) return; // prevent concurrent/double scoring
-  // Block if another device has claimed scorer
-  if(S.scorerDevice && S.scorerDevice !== DEVICE_ID){
-    toast('⚠️ Another device is scoring. Refresh if you should be scorer.', 'warning', 3000);
-    return;
-  }
+  if(processingBall) return;
   processingBall = true;
+  saveHistory();
+  bat().runs  += runs;
+  bat().balls++;
+  S.currentOverBalls.push(String(runs));
+  if(runs===4) toast('FOUR! 🏏💚', 'success', 1500);
+  if(runs===6) toast('SIX! 🚀💥', 'success', 1800);
+  checkOverComplete();
+  checkMatchEnd();
+  pushState();
+}
   saveHistory();
   bat().runs  += runs;
   bat().balls++;
@@ -866,10 +871,6 @@ function addBall(runs){
 function addExtra(type){
   if(S.matchOver || S.inningsDone) return;
   if(processingBall) return;
-  if(S.scorerDevice && S.scorerDevice !== DEVICE_ID){
-    toast('⚠️ Another device is scoring. Refresh if you should be scorer.', 'warning', 3000);
-    return;
-  }
   processingBall = true;
   saveHistory();
   bat().runs  += 1;
@@ -884,10 +885,6 @@ function addWicket(){
   if(S.matchOver || S.inningsDone) return;
   if(bat().wickets >= 10){ toast('All out already!'); return; }
   if(processingBall) return;
-  if(S.scorerDevice && S.scorerDevice !== DEVICE_ID){
-    toast('⚠️ Another device is scoring. Refresh if you should be scorer.', 'warning', 3000);
-    return;
-  }
   processingBall = true;
   saveHistory();
   bat().wickets++;
@@ -951,19 +948,22 @@ function resolveResult(){
 
 // ── INNINGS SWITCH ──
 function confirmSwitchInnings(){
-  // Only scorer can switch innings
   if(!isScorer){
     toast('Only scorer can switch innings');
     showAuthOverlay();
     return;
   }
 
-  S.inningsDone = false;
-  S.innings = 2;
+  S.inningsDone   = false;
+  S.innings       = 2;
   S.currentOverBalls = [];
+  S.scorerDevice  = '';   // clear lock — both scorer devices can now score 2nd innings
+
+  // Reset processing guard so scoring works immediately after switch
+  processingBall = false;
+  clearTimeout(pushState._safetyTimer);
 
   toast(`${bat().name} need ${S.target} to win! 🎯`, 'info', 3000);
-
   pushState();
 }
 
@@ -973,6 +973,7 @@ function manualSwitchInnings(){
   saveHistory();
   S.target = bat().runs + 1;
   S.inningsDone = true;
+  processingBall = false;
   pushState();
 }
 
@@ -980,8 +981,9 @@ function undoLast(){
   if(!S.history.length){ toast('Nothing to undo'); return; }
   const prev = JSON.parse(S.history[S.history.length-1]);
   prev.history = S.history.slice(0,-1);
-  prev.scorerPass = S.scorerPass; // preserve local pass
+  prev.scorerPass = S.scorerPass;
   S = prev;
+  processingBall = false;
   toast('Undone ↩');
   pushState();
 }
@@ -1036,12 +1038,12 @@ function renderState(){
   } else {
     $('innings-done-banner').classList.add('hidden');
     if(isScorer && !s.matchOver && activeTab==='scorer') $('scorer-panel').classList.remove('hidden');
+  }
 
   // Show "Take Over" button if another device is holding the scorer slot
   const claimBtn = $('btn-claim-scorer');
   if(claimBtn){
     claimBtn.style.display = (isScorer && s.scorerDevice && s.scorerDevice !== DEVICE_ID) ? 'block' : 'none';
-  }
   }
 
   // Result
@@ -1130,24 +1132,21 @@ function renderState(){
   } else {
     $('scorer-access-card').classList.add('hidden');
   }
-
-  // Keep scorer panel synced across all devices
-  if(isScorer && activeTab === 'scorer' && !s.matchOver && !s.inningsDone){
-    $('scorer-panel').classList.remove('hidden');
-  }
 }
 
 // ── FIREBASE ──
 function pushState(){
   renderState();
-  if(!isFirebaseReady || !S.matchId) { processingBall = false; return; }
+  // Safety: always release the lock within 3s no matter what
+  clearTimeout(pushState._safetyTimer);
+  pushState._safetyTimer = setTimeout(() => { processingBall = false; }, 3000);
+
+  if(!isFirebaseReady || !S.matchId){ processingBall = false; return; }
   matchRef = db.ref('matches/' + S.matchId);
   const toStore = {...S, history:[]};
-  matchRef.set(toStore).then(() => {
-    processingBall = false;
-  }).catch(() => {
-    processingBall = false;
-  });
+  matchRef.set(toStore)
+    .then(()  => { processingBall = false; clearTimeout(pushState._safetyTimer); })
+    .catch(()  => { processingBall = false; clearTimeout(pushState._safetyTimer); });
 }
 
 function listenFirebase(matchId){
@@ -1158,11 +1157,13 @@ function listenFirebase(matchId){
     if(!data) return;
     const localHistory = S.history;
     const localPass    = S.scorerPass;
-    // If we were mid-write, the incoming value is authoritative — reset guard
+    // Any incoming Firebase update is authoritative — always unblock processing
     processingBall = false;
+    clearTimeout(pushState._safetyTimer);
     S = data;
     S.history    = localHistory;
     S.scorerPass = localPass || data.scorerPass;
+    // Ensure isScorer flag is respected for 2nd innings panel visibility
     renderState();
   });
 }
