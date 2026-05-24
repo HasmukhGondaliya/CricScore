@@ -379,9 +379,11 @@ html,body{
   position:fixed;bottom:0;left:0;right:0;z-index:150;
   background:var(--surface);border-top:1px solid var(--border);
   display:flex;
-  max-width:480px;margin:0 auto;
   padding-bottom:env(safe-area-inset-bottom,0);
   box-shadow:0 -2px 12px rgba(0,0,0,.06);
+  /* On all screens: stay within the 480px app column */
+  width:100%;max-width:480px;
+  left:50%;transform:translateX(-50%);
 }
 .nav-btn{
   flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -438,7 +440,7 @@ html,body{
 /* ── RESPONSIVE ── */
 @media(min-width:481px){
   #app{border-left:1px solid var(--border);border-right:1px solid var(--border);min-height:100dvh;}
-  .bot-nav{left:50%;transform:translateX(-50%);width:480px;border-left:1px solid var(--border);border-right:1px solid var(--border);}
+  .bot-nav{border-left:1px solid var(--border);border-right:1px solid var(--border);}
 }
 .hidden{display:none!important;}
 
@@ -652,6 +654,7 @@ html,body{
       <button class="btn-action" onclick="endMatch()">End Match 🏆</button>
     </div>
     <div class="action-grid">
+      <button class="btn-action blue" onclick="claimScorer()" id="btn-claim-scorer" style="display:none">📲 Take Over Scoring</button>
       <button class="btn-action red" onclick="resetMatch()">Reset Match</button>
     </div>
   </div>
@@ -661,7 +664,7 @@ html,body{
 <!-- FOOTER -->
 <footer style="
   margin-top: 32px;
-  padding: 20px 16px 24px;
+  padding: 20px 16px 110px;
   text-align: center;
   border-top: 1px solid var(--border);
 ">
@@ -709,16 +712,14 @@ html,body{
 //  FIREBASE CONFIG — PASTE YOUR VALUES HERE
 //  (Firebase Console → Project Settings → Your apps → </> Web)
 // ════════════════════════════════════════════════════
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyBO2nSzUMxCLHeISwhd-rKm6D7PPQmEqO8",
-  authDomain: "cricscorebyhg.firebaseapp.com",
-  databaseURL: "https://cricscorebyhg-default-rtdb.firebaseio.com",
-  projectId: "cricscorebyhg",
-  storageBucket: "cricscorebyhg.firebasestorage.app",
-  messagingSenderId: "794602401477",
-  appId: "1:794602401477:web:81d84aa51e16c394078aac",
-  measurementId: "G-YJ97PN7NY3"
+  apiKey:            "REPLACE_WITH_YOUR_apiKey",
+  authDomain:        "REPLACE_WITH_YOUR_authDomain",
+  databaseURL:       "REPLACE_WITH_YOUR_databaseURL",
+  projectId:         "REPLACE_WITH_YOUR_projectId",
+  storageBucket:     "REPLACE_WITH_YOUR_storageBucket",
+  messagingSenderId: "REPLACE_WITH_YOUR_messagingSenderId",
+  appId:             "REPLACE_WITH_YOUR_appId"
 };
 // ════════════════════════════════════════════════════
 
@@ -744,13 +745,22 @@ const BLANK = () => ({
   result:'',
   scorerPass:'',
   matchId:'',
-  inningsDone:false   // flag: 1st innings just finished, waiting for switch
+  inningsDone:false,   // flag: 1st innings just finished, waiting for switch
+  scorerDevice:''      // device ID of the scorer who claimed this match
 });
 
 let S = BLANK();
 let isScorer = false;
 let activeTab = 'score';
 let darkMode  = false;
+let processingBall = false; // guard: prevent double-tap / concurrent scoring
+
+// Unique device ID to detect and block a second concurrent scorer
+const DEVICE_ID = localStorage.getItem('cricscore_device') || (() => {
+  const id = 'dev_' + Math.random().toString(36).slice(2,10);
+  localStorage.setItem('cricscore_device', id);
+  return id;
+})();
 
 // ── HELPERS ──
 const $ = id => document.getElementById(id);
@@ -805,6 +815,7 @@ function startMatch(){
   S.scorerPass = pass;
   S.started = true;
   S.matchId = 'match_' + Date.now();
+  S.scorerDevice = DEVICE_ID; // claim scorer slot
 
   $('setup-screen').classList.add('hidden');
   $('scoreboard').classList.remove('hidden');
@@ -832,6 +843,13 @@ function saveHistory(){
 
 function addBall(runs){
   if(S.matchOver || S.inningsDone) return;
+  if(processingBall) return; // prevent concurrent/double scoring
+  // Block if another device has claimed scorer
+  if(S.scorerDevice && S.scorerDevice !== DEVICE_ID){
+    toast('⚠️ Another device is scoring. Refresh if you should be scorer.', 'warning', 3000);
+    return;
+  }
+  processingBall = true;
   saveHistory();
   bat().runs  += runs;
   bat().balls++;
@@ -845,6 +863,12 @@ function addBall(runs){
 
 function addExtra(type){
   if(S.matchOver || S.inningsDone) return;
+  if(processingBall) return;
+  if(S.scorerDevice && S.scorerDevice !== DEVICE_ID){
+    toast('⚠️ Another device is scoring. Refresh if you should be scorer.', 'warning', 3000);
+    return;
+  }
+  processingBall = true;
   saveHistory();
   bat().runs  += 1;
   bat().extras+= 1;
@@ -857,6 +881,12 @@ function addExtra(type){
 function addWicket(){
   if(S.matchOver || S.inningsDone) return;
   if(bat().wickets >= 10){ toast('All out already!'); return; }
+  if(processingBall) return;
+  if(S.scorerDevice && S.scorerDevice !== DEVICE_ID){
+    toast('⚠️ Another device is scoring. Refresh if you should be scorer.', 'warning', 3000);
+    return;
+  }
+  processingBall = true;
   saveHistory();
   bat().wickets++;
   bat().balls++;
@@ -954,6 +984,12 @@ function undoLast(){
   pushState();
 }
 
+function claimScorer(){
+  S.scorerDevice = DEVICE_ID;
+  pushState();
+  toast('You are now the active scorer 🎯', 'success');
+}
+
 function endMatch(){
   if(!confirm('End the match now?')) return;
   resolveResult();
@@ -998,6 +1034,12 @@ function renderState(){
   } else {
     $('innings-done-banner').classList.add('hidden');
     if(isScorer && !s.matchOver && activeTab==='scorer') $('scorer-panel').classList.remove('hidden');
+
+  // Show "Take Over" button if another device is holding the scorer slot
+  const claimBtn = $('btn-claim-scorer');
+  if(claimBtn){
+    claimBtn.style.display = (isScorer && s.scorerDevice && s.scorerDevice !== DEVICE_ID) ? 'block' : 'none';
+  }
   }
 
   // Result
@@ -1081,12 +1123,7 @@ function renderState(){
   }
 
   // Scorer access card for viewers
-  // Show immediately after match starts, even before first score
-  if(
-    (s.started || S.matchId) &&
-    !isScorer &&
-    !s.matchOver
-  ){
+  if(s.started && !isScorer && !s.matchOver){
     $('scorer-access-card').classList.remove('hidden');
   } else {
     $('scorer-access-card').classList.add('hidden');
@@ -1101,10 +1138,14 @@ function renderState(){
 // ── FIREBASE ──
 function pushState(){
   renderState();
-  if(!isFirebaseReady || !S.matchId) return;
+  if(!isFirebaseReady || !S.matchId) { processingBall = false; return; }
   matchRef = db.ref('matches/' + S.matchId);
   const toStore = {...S, history:[]};
-  matchRef.set(toStore);
+  matchRef.set(toStore).then(() => {
+    processingBall = false;
+  }).catch(() => {
+    processingBall = false;
+  });
 }
 
 function listenFirebase(matchId){
@@ -1115,6 +1156,8 @@ function listenFirebase(matchId){
     if(!data) return;
     const localHistory = S.history;
     const localPass    = S.scorerPass;
+    // If we were mid-write, the incoming value is authoritative — reset guard
+    processingBall = false;
     S = data;
     S.history    = localHistory;
     S.scorerPass = localPass || data.scorerPass;
@@ -1165,7 +1208,15 @@ function closeAuth()       { $('auth-overlay').classList.add('hidden'); switchTa
 function checkAuth(){
   if($('auth-pw').value === S.scorerPass){
 
+    // If another device already holds the scorer slot, warn but still allow (don't hard-block)
+    if(S.scorerDevice && S.scorerDevice !== DEVICE_ID){
+      toast('⚠️ Another scorer is already active — you may conflict!', 'warning', 4000);
+    }
+
     isScorer = true;
+
+    // Claim the scorer device slot in Firebase
+    S.scorerDevice = DEVICE_ID;
 
     // Save scorer session locally
     localStorage.setItem('cricscore_scorer_' + S.matchId, 'true');
@@ -1177,6 +1228,8 @@ function checkAuth(){
     updateTabUI();
 
     renderState();
+
+    pushState();
 
     toast('Scorer access granted ✅','success');
 
